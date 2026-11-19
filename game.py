@@ -176,7 +176,12 @@ class Game:
         if clash:
             if clash.online or me:
                 raise GameError("That name is taken.")
-            # Same person on a new tab/device: hand their old seat (and role) over.
+            if clash.id in self.round_players and self.phase not in (LOBBY, RESULTS):
+                # Their seat holds a secret role right now. Handing it over by name alone would let
+                # anyone read another player's word, so they must come back on their own device.
+                raise GameError("That player is in this round. Reopen the game on their original "
+                                "phone, or wait for the round to end.")
+            # Same person on a new tab/device: hand their old seat (and score) over.
             self._rekey(clash.id, pid)
             clash.online, clash.offline_since = True, None
             log.info("%s rejoined", clash.name)
@@ -269,6 +274,9 @@ class Game:
 
     def add_pack(self, pid: str, name, words):
         self._require_host(pid)
+        # Not mid-round: replacing the current category's pack would drop the secret word from the
+        # spy's guess list, so they could never guess correctly.
+        self._require_phase(LOBBY, RESULTS)
         try:
             self.settings["category"] = self.bank.add_pack(name, words)
         except WordBankError as e:
@@ -378,8 +386,18 @@ class Game:
         if target not in self.alive or target == pid:
             raise GameError("You can't vote for that player.")
         self.votes[pid] = target
-        if len(self.votes) == len(self.alive):
+        if self._all_voted(now):
             self._tally(now)
+
+    def _all_voted(self, now: float) -> bool:
+        """Everyone who is present has voted. Players offline for longer than a short grace period
+        don't hold up the vote (a phone that just blinked off still counts as present)."""
+        present = [p for p in self.alive if not self._away(p, now)]
+        return bool(self.votes) and all(p in self.votes for p in present)
+
+    def _away(self, pid: str, now: float) -> bool:
+        p = self.players.get(pid)
+        return not p or (not p.online and p.offline_since is not None and now - p.offline_since >= OFFLINE_TURN_GRACE)
 
     def end_vote(self, pid: str, now: float):
         self._require_host(pid)
@@ -490,11 +508,15 @@ class Game:
                 self.host_id = nxt
                 changed = True
 
-        cur = self.players.get(self.current_turn) if self.current_turn else None
-        if cur and not cur.online and cur.offline_since and now - cur.offline_since >= OFFLINE_TURN_GRACE:
-            self._add_clue(cur.id, None)
+        cur = self.current_turn
+        if cur and self._away(cur, now):
+            self._add_clue(cur, None)
             self._advance_turn(now)
             changed = True
+
+        if self.phase == VOTING and self._all_voted(now):
+            self._tally(now)
+            return True
 
         if self.deadline and now >= self.deadline:
             changed = True

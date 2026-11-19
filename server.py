@@ -13,6 +13,7 @@ import io
 import json
 import logging
 import re
+import secrets
 import socket
 import time
 from contextlib import asynccontextmanager
@@ -27,13 +28,16 @@ from game import Game, GameError
 from wordbank import WordBank
 
 BASE = Path(__file__).parent
-PID_RE = re.compile(r"^[A-Za-z0-9_-]{6,40}$")
+TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 TICK_SECONDS = 0.5
 
 log = logging.getLogger("office_spy")
 bank = WordBank(BASE / "data")
 game = Game(bank)
-sockets: dict[str, set[WebSocket]] = {}  # player id -> open connections
+sockets: dict[str, set[WebSocket]] = {}  # public player id -> open connections
+# Secret device token -> public player id. Tokens never leave this process: other players only
+# ever see public ids, so knowing someone's id doesn't let you connect as them.
+identities: dict[str, str] = {}
 screens: set[WebSocket] = set()  # shared TV/projector views
 JOIN_URL = ""
 
@@ -140,7 +144,7 @@ async def qr():
 
 
 @app.websocket("/ws")
-async def ws_endpoint(ws: WebSocket, pid: str = "", screen: int = 0):
+async def ws_endpoint(ws: WebSocket, token: str = "", screen: int = 0):
     await ws.accept()
 
     if screen:
@@ -157,9 +161,10 @@ async def ws_endpoint(ws: WebSocket, pid: str = "", screen: int = 0):
             screens.discard(ws)
         return
 
-    if not PID_RE.match(pid):
+    if not TOKEN_RE.match(token):
         await ws.close(code=1008)
         return
+    pid = player_id_for(token)
 
     sockets.setdefault(pid, set()).add(ws)
     game.set_online(pid, True, time.time())  # no-op if they haven't joined yet
@@ -194,12 +199,24 @@ async def ws_endpoint(ws: WebSocket, pid: str = "", screen: int = 0):
         await broadcast()
 
 
+def player_id_for(token: str) -> str:
+    """The public id for a device's secret token, creating one on first connect."""
+    pid = identities.get(token)
+    if pid is None:
+        pid = identities[token] = secrets.token_hex(8)
+    return pid
+
+
 async def notify_removed():
     """Tell connections whose player was removed (left or kicked)."""
     for pid, conns in list(sockets.items()):
         if pid not in game.players:
             for ws in list(conns):
                 await send(ws, {"type": "removed"})
+    # Forget tokens whose player is gone and who have no open connection.
+    for token, pid in list(identities.items()):
+        if pid not in game.players and pid not in sockets:
+            del identities[token]
 
 
 def main():

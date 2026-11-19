@@ -57,17 +57,27 @@ def test_first_player_is_host_and_names_are_unique(bank):
         g.join("newperson1", "player1", T0)
 
 
-def test_offline_player_can_reclaim_seat_by_name(bank):
+def test_offline_player_can_reclaim_seat_by_name_in_lobby(bank):
+    g, ids = new_game(bank)
+    g.players[ids[2]].score = 5
+    g.set_online(ids[2], False, T0)
+    g.join("brandnewid", "Player2", T0 + 5)
+    assert ids[2] not in g.players and g.players["brandnewid"].score == 5
+
+
+def test_seat_in_a_live_round_cannot_be_taken_by_name(bank):
+    """Otherwise a spy could open a private window, type an offline civilian's name, and read the word."""
     g, ids = new_game(bank)
     g.start(ids[0], T0)
-    old = ids[2]
-    role_word = g.word_for(old)
-    was_spy = old in g.spies
-    g.set_online(old, False, T0)
-    g.join("brandnewid", "Player2", T0 + 5)
-    assert old not in g.players and "brandnewid" in g.round_players
-    assert g.word_for("brandnewid") == role_word
-    assert ("brandnewid" in g.spies) == was_spy
+    victim = next(p for p in g.round_players if p not in g.spies)
+    g.set_online(victim, False, T0)
+    with pytest.raises(GameError, match="in this round"):
+        g.join("snoopertab", g.players[victim].name, T0 + 5)
+    assert "snoopertab" not in g.players and victim in g.round_players
+    # Once the round is over (words are public anyway), the seat can be reclaimed.
+    g.back_to_lobby(ids[0] if ids[0] != victim else ids[1])
+    g.join("snoopertab", g.players[victim].name, T0 + 10)
+    assert "snoopertab" in g.players
 
 
 def test_only_host_can_start_and_needs_three_players(bank):
@@ -267,3 +277,47 @@ def test_words_do_not_repeat_until_category_exhausted(bank):
         seen.append(g.word)
         g.back_to_lobby(ids[0])
     assert len(set(seen)) == len(seen)
+
+
+def test_custom_pack_cannot_be_changed_mid_round(bank):
+    """Replacing the current pack mid-round would drop the word from the spy's guess list."""
+    g, ids = new_game(bank)
+    g.add_pack(ids[0], "Team", ["a", "b", "c", "d", "e", "f"])
+    g.start(ids[0], T0)
+    with pytest.raises(GameError):
+        g.add_pack(ids[0], "Team", ["q", "r", "s", "t", "u", "v"])
+    assert g.word in g.bank.words("Team")
+
+
+def test_offline_players_do_not_hold_up_the_vote(bank):
+    g, ids = new_game(bank, 4)
+    g.start(ids[0], T0)
+    g.start_vote(ids[0], T0)
+    gone = g.alive[3]
+    g.set_online(gone, False, T0)
+    a, b, c = g.alive[:3]
+    g.vote(a, b, T0 + 1); g.vote(b, c, T0 + 1); g.vote(c, b, T0 + 1)
+    assert g.phase == G.VOTING  # a phone that only just went offline still gets a chance
+    assert g.tick(T0 + G.OFFLINE_TURN_GRACE + 1)
+    assert g.phase in (G.GUESS, G.RESULTS)
+
+
+def test_vote_completes_immediately_when_absent_player_already_long_gone(bank):
+    g, ids = new_game(bank, 4)
+    g.start(ids[0], T0)
+    gone = g.alive[3]
+    g.set_online(gone, False, T0)
+    g.start_vote(ids[0], T0 + 30)
+    a, b, c = g.alive[:3]
+    g.vote(a, b, T0 + 31); g.vote(b, c, T0 + 31); g.vote(c, b, T0 + 31)
+    assert g.phase != G.VOTING
+
+
+def test_nobody_present_means_no_early_tally(bank):
+    g, ids = new_game(bank, 3)
+    g.start(ids[0], T0)
+    g.start_vote(ids[0], T0)
+    for p in ids:
+        g.set_online(p, False, T0)
+    g.tick(T0 + G.OFFLINE_TURN_GRACE + 1)
+    assert g.phase == G.VOTING

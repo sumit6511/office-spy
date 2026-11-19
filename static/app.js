@@ -8,12 +8,18 @@ const IS_SCREEN = location.pathname.startsWith('/screen');
 if (IS_SCREEN) document.body.classList.add('screen');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// Per-tab player id (survives reloads). crypto.randomUUID needs HTTPS, which a LAN game lacks.
-let pid = sessionStorage.getItem('pid');
-if (!pid) {
-  pid = Array.from({length: 20}, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.random() * 36 | 0]).join('');
-  sessionStorage.setItem('pid', pid);
-}
+// Secret token that proves who this device is. It is only ever sent to the server when connecting,
+// never shown to other players (they see a separate public id). Kept in localStorage so it survives
+// closing the tab. `?seat=2` gives a separate identity, for testing several players in one browser.
+// crypto.randomUUID needs HTTPS (which a LAN game lacks), but getRandomValues works over plain HTTP.
+const TOKEN_KEY = 'token' + (new URLSearchParams(location.search).get('seat') || '').replace(/[^\w-]/g, '');
+const newToken = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+};
+let token = store.get(TOKEN_KEY);
+if (!token) { token = newToken(); store.set(TOKEN_KEY, token); }
 
 let ws, S = null, recvAt = 0, connected = false, removed = false;
 let lastViewKey = '', lastPhase = null, lastTickSec = null;
@@ -194,13 +200,13 @@ function shreds() {
 function connect() {
   if (removed || (ws && ws.readyState <= 1)) return;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws?pid=${pid}&screen=${IS_SCREEN ? 1 : 0}`);
+  ws = new WebSocket(`${proto}://${location.host}/ws?token=${token}&screen=${IS_SCREEN ? 1 : 0}`);
   ws.onopen = () => { connected = true; render(); };
   ws.onmessage = e => {
     const m = JSON.parse(e.data);
     if (m.type === 'state') { const prev = S; S = m; recvAt = Date.now(); render(); cues(prev, S); }
     else if (m.type === 'error') { toast(m.message); Sound.fx.error(); buzz(120); }
-    else if (m.type === 'removed') { removed = true; sessionStorage.removeItem('pid'); ws.close(); render(); }
+    else if (m.type === 'removed') { removed = true; token = newToken(); store.set(TOKEN_KEY, token); ws.close(); render(); }
   };
   ws.onclose = () => { connected = false; if (S) render(); setTimeout(connect, 1000); };
 }

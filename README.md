@@ -59,8 +59,11 @@ The UI is designed as a card table: green felt, manila case files, rubber stamps
   in `static/fonts/`, so it works on a Wi-Fi network with no internet.
 
 ## Built to survive real phones
-- A phone that sleeps or refreshes rejoins with the same role. If someone switches tabs or browsers, they can
-  rejoin with **the same name** and get their seat back.
+- A phone that sleeps, refreshes or closes the tab rejoins with the same role. Each device keeps a private
+  token, and other players only ever see a separate public id, so nobody can connect as someone else.
+- If someone switches browsers or devices, they can rejoin with **the same name** and get their seat (and score)
+  back, but only between rounds. During a round that seat holds a secret word, so it stays with the original device.
+- Offline players are skipped on their typed turn and don't hold up the vote.
 - The server only ever sends each player **their own** word. Opening dev tools won't reveal anything,
   and the secret word is never printed in the host's terminal either.
 - Sounds and vibration are generated in the browser (no audio files). There's a mute button in the top bar.
@@ -101,5 +104,8 @@ The server is the single source of truth, and phones just display what they're t
 pip install -r requirements-dev.txt
 python -m pytest -q
 ```
+
+To play several players from one computer, open each one with a different `?seat=` value,
+e.g. `http://localhost:8000/?seat=1`, `/?seat=2`. Tabs in the same browser otherwise share one identity.
 
 To add built-in words, edit `data/words.json` (Classic) or `data/pairs.json` (Undercover pairs of similar words).
