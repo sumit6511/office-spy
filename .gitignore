@@ -1,3 +1,8 @@
 __pycache__/
 .pytest_cache/
+.ruff_cache/
 .venv/
+# Created while playing. Custom packs often hold office in-jokes, so keep them out of the repo.
+data/custom_words.json
+data/scores.json
+data/.*.tmp

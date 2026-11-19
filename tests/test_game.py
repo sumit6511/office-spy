@@ -75,7 +75,7 @@ def test_seat_in_a_live_round_cannot_be_taken_by_name(bank):
         g.join("snoopertab", g.players[victim].name, T0 + 5)
     assert "snoopertab" not in g.players and victim in g.round_players
     # Once the round is over (words are public anyway), the seat can be reclaimed.
-    g.back_to_lobby(ids[0] if ids[0] != victim else ids[1])
+    g.back_to_lobby(g.host_id)
     g.join("snoopertab", g.players[victim].name, T0 + 10)
     assert "snoopertab" in g.players
 
@@ -321,3 +321,47 @@ def test_nobody_present_means_no_early_tally(bank):
         g.set_online(p, False, T0)
     g.tick(T0 + G.OFFLINE_TURN_GRACE + 1)
     assert g.phase == G.VOTING
+
+
+# ---------------------------------------------------------------- files & persistence
+
+def test_corrupt_custom_pack_file_is_ignored(bank, tmp_path):
+    (tmp_path / "custom_words.json").write_text("{not json", encoding="utf-8")
+    b = WordBank(tmp_path)
+    assert b.custom == {} and b.has_category("Office")
+    b.add_pack("Team", ["a", "b", "c", "d", "e", "f"])
+    assert json.loads((tmp_path / "custom_words.json").read_text())["Team"][0] == "a"
+    assert not list(tmp_path.glob(".*.tmp"))  # no leftover temp files
+
+
+def test_missing_word_files_give_a_friendly_error(tmp_path):
+    g = Game(WordBank(tmp_path), random.Random(1))
+    for i in range(3):
+        g.join(f"z{i}xxxxx", f"P{i}", T0)
+    with pytest.raises(GameError, match="no word packs"):
+        g.start("z0xxxxx", T0)
+    g.update_settings("z0xxxxx", {"mode": G.UNDERCOVER})
+    with pytest.raises(GameError, match="no Undercover word pairs"):
+        g.start("z0xxxxx", T0)
+    assert g.phase == G.LOBBY and g.round == 0
+
+
+def test_scoreboard_survives_a_restart(bank, tmp_path):
+    path = tmp_path / "scores.json"
+    g = Game(bank, random.Random(1), scores_path=path)
+    ids = [f"s{i}xxxxx" for i in range(3)]
+    for i, pid in enumerate(ids):
+        g.join(pid, f"Player{i}", T0)
+    g.start(ids[0], T0)
+    g.start_vote(ids[0], T0)
+    vote_all(g, next(p for p in g.round_players if p not in g.spies))  # an innocent: spy wins
+    before = {p.name: (p.score, p.wins, p.games) for p in g.players.values()}
+
+    g2 = Game(bank, random.Random(2), scores_path=path)  # "restart"
+    g2.join("newtokenid", "player1", T0)  # names match case-insensitively
+    p = g2.players["newtokenid"]
+    assert (p.score, p.wins, p.games) == before["Player1"] and p.games == 1
+
+    g2.reset_scores("newtokenid")
+    saved = Game(bank, scores_path=path).saved_scores
+    assert set(saved) == {"player1"} and saved["player1"]["score"] == saved["player1"]["games"] == 0

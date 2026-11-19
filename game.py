@@ -23,8 +23,9 @@ import random
 import re
 from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
 
-from wordbank import WordBank, WordBankError
+from wordbank import WordBank, WordBankError, read_json, write_json_atomic
 
 log = logging.getLogger("office_spy")
 
@@ -84,9 +85,12 @@ def _clean(s, limit: int) -> str:
 
 
 class Game:
-    def __init__(self, bank: WordBank, rng: random.Random | None = None):
+    def __init__(self, bank: WordBank, rng: random.Random | None = None, scores_path: Path | None = None):
         self.bank = bank
         self.rng = rng or random.Random()
+        # Optional: keep the scoreboard (by player name) across server restarts.
+        self.scores_path = Path(scores_path) if scores_path else None
+        self.saved_scores: dict[str, dict] = read_json(self.scores_path) if self.scores_path else {}
         self.players: dict[str, Player] = {}
         self.host_id: str | None = None
         self.settings = dict(DEFAULT_SETTINGS)
@@ -190,6 +194,11 @@ class Game:
             if len(self.players) >= MAX_PLAYERS:
                 raise GameError("The game is full.")
             me = self.players[pid] = Player(pid, name)
+            saved = self.saved_scores.get(name.lower())
+            if isinstance(saved, dict):
+                for k in ("score", "wins", "games"):
+                    if isinstance(saved.get(k), int):
+                        setattr(me, k, saved[k])
             log.info("%s joined (%d players)", name, len(self.players))
         me.name = name
         me.online, me.offline_since = True, None
@@ -234,7 +243,7 @@ class Game:
         p = self.players.pop(pid)
         log.info("%s left", p.name)
         if self.phase == RESULTS:
-            self.back_to_lobby(self.host_id if self.host_id != pid else pid, force=True)
+            self.back_to_lobby(pid, force=True)
         if self.host_id == pid:
             online = [x.id for x in self.players.values() if x.online]
             self.host_id = (online or list(self.players) or [None])[0]
@@ -249,6 +258,18 @@ class Game:
         self._require_host(pid)
         for p in self.players.values():
             p.score = p.wins = p.games = 0
+        self.saved_scores = {}
+        self._save_scores()
+
+    def _save_scores(self):
+        if not self.scores_path:
+            return
+        for p in self.players.values():
+            self.saved_scores[p.name.lower()] = {"name": p.name, "score": p.score, "wins": p.wins, "games": p.games}
+        try:
+            write_json_atomic(self.scores_path, self.saved_scores)
+        except OSError:
+            log.exception("Couldn't save the scoreboard")
 
     # ------------------------------------------------------------------ settings & packs
 
@@ -301,6 +322,14 @@ class Game:
         if len(online) < MIN_PLAYERS:
             raise GameError(f"Need at least {MIN_PLAYERS} connected players.")
 
+        try:
+            if self.settings["mode"] == UNDERCOVER:
+                picked = self.bank.pick_pair(self.settings["category"], self.used, self.rng)
+            else:
+                picked = (*self.bank.pick_word(self.settings["category"], self.used, self.rng), None)
+        except WordBankError as e:
+            raise GameError(str(e)) from None
+
         self._reset_round()
         self.round += 1
         self.codename = f"Operation {self.rng.choice(CODENAME_A)} {self.rng.choice(CODENAME_B)}"
@@ -310,10 +339,7 @@ class Game:
         n_spies = min(self.settings["spies"], max(1, (len(online) - 1) // 2))
         self.spies = set(self.rng.sample(online, n_spies))
 
-        if self.mode == UNDERCOVER:
-            self.category, self.word, self.spy_word = self.bank.pick_pair(self.settings["category"], self.used, self.rng)
-        else:
-            self.category, self.word = self.bank.pick_word(self.settings["category"], self.used, self.rng)
+        self.category, self.word, self.spy_word = picked
         for p in online:
             self.players[p].games += 1
 
@@ -484,6 +510,7 @@ class Game:
             if (winner == SPIES) == spy_side:
                 p.wins += 1
                 p.score += 2 if spy_side else 1
+        self._save_scores()
         log.info("Round %d over: %s win. %s", self.round, winner, reason)
 
     def back_to_lobby(self, pid: str, force: bool = False):
@@ -546,7 +573,7 @@ class Game:
             "phase": ph,
             "round": self.round,
             "codename": self.codename,
-            "settings": self.settings,
+            "settings": dict(self.settings),
             "categories": self.bank.categories(),
             "min_players": MIN_PLAYERS,
             "you": p and {

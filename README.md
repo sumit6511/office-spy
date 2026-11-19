@@ -5,12 +5,14 @@ Play over office Wi-Fi: one laptop runs the server and everyone joins from their
 
 ## Quick start
 
+Needs Python 3.10 or newer (`python3 --version`).
+
 ```bash
 cd office-spy
-python -m venv .venv
+python3 -m venv .venv              # Windows: py -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-python server.py
+python server.py                   # inside the venv, `python` works on every OS
 ```
 
 The terminal prints a join link (e.g. `http://192.168.1.25:8000`) and a QR code. Everyone on the same Wi-Fi scans it.
@@ -33,6 +35,8 @@ the results, but never anyone's word.
 | Spies win when | an innocent is voted out, it's a tie, or the spy guesses the word | they survive until it's 1-on-1 |
 
 In Classic, the spy can tap **"🎯 I know the word!"** at any time to reveal themselves and guess early.
+With 2–3 spies in Classic, the round is decided by the first spy who is caught (or reveals themselves):
+if they guess the word, the spies win; if not, the civilians win, even if the other spies were never found.
 
 ### Clue styles
 - **🗣️ Talk out loud:** discuss against a timer (2–10 min), then vote.
@@ -40,6 +44,7 @@ In Classic, the spy can tap **"🎯 I know the word!"** at any time to reveal th
   Clues containing your own word are rejected. Offline or slow players are skipped automatically.
 
 **Points:** winning civilians get +1 each. Winning spies or undercover agents get +2 each. The scoreboard also tracks wins/games.
+It's saved to `data/scores.json` by player name, so it survives restarting the server. The host can reset it.
 
 ## Host tools
 - Game setup: mode, clue style, category, number of spies (1–3), timer or clue laps, whether the spy sees the category
@@ -72,6 +77,7 @@ The UI is designed as a card table: green felt, manila case files, rubber stamps
 - **Phones can't open the link:** the office Wi-Fi may block devices from talking to each other ("client isolation").
   Turn on the laptop's hotspot and have everyone join that instead.
 - **macOS asks to accept incoming connections:** click Allow. **Windows firewall prompt:** allow on *Private* networks.
+- **`python: command not found` (Mac):** use `python3` to create the venv. Once it's activated, `python` works.
 - **Wrong IP in the link:** run `python server.py --ip <your-ip>`. Find your IP with `ipconfig` (Windows) or `ipconfig getifaddr en0` (Mac).
 
 ## Project structure
@@ -84,13 +90,16 @@ office-spy/
 ├── data/
 │   ├── words.json     # Classic word packs (6 categories)
 │   ├── pairs.json     # Undercover word pairs (6 categories)
-│   └── custom_words.json   # created when the host adds a pack
+│   ├── custom_words.json   # created when the host adds a pack (not committed)
+│   └── scores.json         # saved scoreboard (not committed)
 ├── static/
 │   ├── index.html
 │   ├── style.css      # design system: felt, paper, stamps, chips, motion
 │   ├── app.js         # phone + shared-screen UI (vanilla JS, no build step)
 │   └── fonts/         # bundled web fonts
-└── tests/test_game.py # pytest suite for the engine
+└── tests/
+    ├── test_game.py   # engine tests
+    └── test_server.py # end-to-end tests over real WebSockets
 ```
 
 **How it works:** clients send small JSON actions over a WebSocket (`{"type": "vote", "target": "…"}`).
@@ -103,9 +112,16 @@ The server is the single source of truth, and phones just display what they're t
 ```bash
 pip install -r requirements-dev.txt
 python -m pytest -q
+ruff check .
 ```
+
+GitHub Actions runs both on every push (Python 3.10, 3.12 and 3.13).
 
 To play several players from one computer, open each one with a different `?seat=` value,
 e.g. `http://localhost:8000/?seat=1`, `/?seat=2`. Tabs in the same browser otherwise share one identity.
 
 To add built-in words, edit `data/words.json` (Classic) or `data/pairs.json` (Undercover pairs of similar words).
+
+## License
+
+MIT, see [LICENSE](LICENSE). The bundled fonts are under the SIL Open Font License (`static/fonts/OFL-*.txt`).

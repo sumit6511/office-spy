@@ -30,10 +30,13 @@ from wordbank import WordBank
 BASE = Path(__file__).parent
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 TICK_SECONDS = 0.5
+SEND_TIMEOUT = 5  # seconds; a phone that can't take an update in this time is dropped (it will reconnect)
+MAX_CONNECTIONS = 60  # players' phones plus shared screens; plenty for a 20-player game
+MAX_MESSAGE_CHARS = 8_000  # the largest real message is a custom word pack (80 words of 30 chars)
 
 log = logging.getLogger("office_spy")
 bank = WordBank(BASE / "data")
-game = Game(bank)
+game = Game(bank, scores_path=BASE / "data" / "scores.json")
 sockets: dict[str, set[WebSocket]] = {}  # public player id -> open connections
 # Secret device token -> public player id. Tokens never leave this process: other players only
 # ever see public ids, so knowing someone's id doesn't let you connect as them.
@@ -56,23 +59,36 @@ def lan_ip() -> str:
 
 async def send(ws: WebSocket, data: dict):
     try:
-        await ws.send_json(data)
+        await asyncio.wait_for(ws.send_json(data), SEND_TIMEOUT)
+    except asyncio.TimeoutError:
+        # A stuck phone must not hold everyone else up. Closing it makes the handler clean up,
+        # and the phone reconnects (with its role) once its network recovers.
+        try:
+            await ws.close()
+        except Exception:
+            pass
     except Exception:
         pass  # connection already closing; cleanup happens in the handler
 
 
+def connection_count() -> int:
+    return len(screens) + sum(len(c) for c in sockets.values())
+
+
 async def broadcast():
+    """Send every connection its own state, all at once, so one slow phone doesn't delay the rest."""
     now = time.time()
+    jobs = []
     for pid, conns in list(sockets.items()):
         state = game.state_for(pid, now)
         state["join_url"] = JOIN_URL
-        for ws in list(conns):
-            await send(ws, state)
+        jobs += [send(ws, state) for ws in list(conns)]
     if screens:
         state = game.state_for(None, now)
         state["join_url"] = JOIN_URL
-        for ws in list(screens):
-            await send(ws, state)
+        jobs += [send(ws, state) for ws in list(screens)]
+    if jobs:
+        await asyncio.gather(*jobs)
 
 
 def dispatch(pid: str, msg: dict, now: float):
@@ -146,6 +162,9 @@ async def qr():
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket, token: str = "", screen: int = 0):
     await ws.accept()
+    if connection_count() >= MAX_CONNECTIONS:
+        await ws.close(code=1013)  # "try again later"
+        return
 
     if screen:
         screens.add(ws)
@@ -173,6 +192,9 @@ async def ws_endpoint(ws: WebSocket, token: str = "", screen: int = 0):
     try:
         while True:
             raw = await ws.receive_text()
+            if len(raw) > MAX_MESSAGE_CHARS:
+                await send(ws, {"type": "error", "message": "That message is too long."})
+                continue
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
@@ -237,7 +259,7 @@ def main():
     except Exception:
         pass
     print("\n  Press Ctrl+C to stop.\n")
-    uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="warning")
+    uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="warning", ws_max_size=64 * 1024)
 
 
 if __name__ == "__main__":
