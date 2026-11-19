@@ -1,0 +1,8 @@
+{
+  "Office": ["Printer", "Coffee machine", "Meeting room", "Payroll", "Whiteboard", "Projector", "Lunch break", "Deadline", "Intern", "Water dispenser", "Annual party", "Overtime", "Elevator", "Reception", "Performance review", "Wi-Fi password", "Stapler", "Team outing"],
+  "Nepali Food": ["Momo", "Dal Bhat", "Sel Roti", "Chatamari", "Yomari", "Bara", "Thukpa", "Gundruk", "Dhido", "Juju Dhau", "Samay Baji", "Chowmein", "Laphing", "Pani Puri", "Sukuti", "Aloo Tama", "Kheer", "Choila"],
+  "Places in Nepal": ["Thamel", "Pokhara", "Boudhanath", "Swayambhu", "Pashupatinath", "Chitwan", "Lumbini", "Patan Durbar Square", "Bhaktapur", "Nagarkot", "Everest Base Camp", "Ratna Park", "Tribhuvan Airport", "Rara Lake", "Basantapur", "Garden of Dreams", "Kirtipur", "Mustang"],
+  "Everyday Places": ["Hospital", "Airport", "School", "Cinema hall", "Bank", "Supermarket", "Gym", "Bus park", "Wedding", "Beach", "Police station", "Library", "Restaurant", "Hotel", "Temple", "Football stadium", "Zoo", "Hair salon"],
+  "Tech": ["Laptop", "Wi-Fi router", "Smartphone", "Keyboard", "Cloud", "Database", "Password", "Bluetooth", "Charger", "Hard disk", "Webcam", "Email", "Antivirus", "USB drive", "Smartwatch", "Headphones", "Server", "Bug"],
+  "Animals": ["Elephant", "Rhino", "Tiger", "Yak", "Monkey", "Red panda", "Crocodile", "Peacock", "Buffalo", "Goat", "Dog", "Snow leopard", "Owl", "Snake", "Camel", "Penguin", "Kangaroo", "Dolphin"]
+}

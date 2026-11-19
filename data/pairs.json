@@ -1,0 +1,8 @@
+{
+  "Office": [["Printer", "Scanner"], ["Meeting room", "Conference hall"], ["Payroll", "Bonus"], ["Whiteboard", "Notice board"], ["Lunch break", "Tea break"], ["Intern", "Trainee"], ["Overtime", "Night shift"], ["Elevator", "Staircase"], ["Projector", "TV screen"], ["Stapler", "Paper clip"]],
+  "Nepali Food": [["Momo", "Samosa"], ["Sel Roti", "Jalebi"], ["Chatamari", "Bara"], ["Thukpa", "Chowmein"], ["Juju Dhau", "Lassi"], ["Sukuti", "Choila"], ["Pani Puri", "Chatpate"], ["Gundruk", "Saag"], ["Dhido", "Dal Bhat"], ["Yomari", "Laddu"]],
+  "Places in Nepal": [["Boudhanath", "Swayambhu"], ["Patan Durbar Square", "Bhaktapur Durbar Square"], ["Chitwan", "Bardiya"], ["Thamel", "Durbar Marg"], ["Rara Lake", "Phewa Lake"], ["Lumbini", "Janakpur"], ["Everest Base Camp", "Annapurna Base Camp"], ["Pashupatinath", "Muktinath"], ["Nagarkot", "Sarangkot"], ["Ratna Park", "Bhrikutimandap"]],
+  "Everyday Places": [["Hospital", "Clinic"], ["Airport", "Bus park"], ["School", "College"], ["Cinema hall", "Theatre"], ["Bank", "ATM"], ["Supermarket", "Local market"], ["Gym", "Swimming pool"], ["Restaurant", "Café"], ["Hotel", "Hostel"], ["Library", "Bookshop"]],
+  "Tech": [["Laptop", "Tablet"], ["Smartphone", "Smartwatch"], ["Wi-Fi", "Bluetooth"], ["Keyboard", "Mouse"], ["Email", "SMS"], ["Webcam", "Microphone"], ["USB drive", "Hard disk"], ["Charger", "Power bank"], ["Facebook", "Instagram"], ["Password", "PIN"]],
+  "Animals": [["Tiger", "Lion"], ["Elephant", "Rhino"], ["Yak", "Buffalo"], ["Dog", "Wolf"], ["Owl", "Eagle"], ["Crocodile", "Alligator"], ["Monkey", "Gorilla"], ["Snow leopard", "Cheetah"], ["Penguin", "Duck"], ["Dolphin", "Shark"]]
+}
