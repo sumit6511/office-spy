@@ -112,6 +112,9 @@ def dispatch(pid: str, msg: dict, now: float):
         "reset_scores": lambda: g.reset_scores(pid),
         "add_pack": lambda: g.add_pack(pid, msg.get("name"), msg.get("words")),
         "delete_pack": lambda: g.delete_pack(pid, msg.get("name")),
+        "approve_rejoin": lambda: g.approve_rejoin(pid, msg.get("target")),
+        "deny_rejoin": lambda: g.deny_rejoin(pid, msg.get("target")),
+        "cancel_rejoin": lambda: g.cancel_rejoin(pid),
     }
     action = actions.get(t)
     if not action:
@@ -218,6 +221,7 @@ async def ws_endpoint(ws: WebSocket, token: str = "", screen: int = 0):
             if not conns:
                 del sockets[pid]
                 game.set_online(pid, False, time.time())
+                game.cancel_rejoin(pid)  # a waiting device that closes stops waiting
         await broadcast()
 
 

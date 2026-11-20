@@ -389,6 +389,34 @@ function viewJoin() {
     <button class="btn btn-quiet enter-3" onclick="openHelp()">How to play</button>
   </div>`;
 }
+// A new device asked to take an offline player's seat mid-round; it waits for the host.
+function viewRejoinWait() {
+  return `<div data-key="rejoin-wait">
+    <div class="masthead"><h1>Office<span>Spy</span></h1></div>
+    <section class="paper verdict drop" data-key="rw">
+      <span class="stamp blue slam">Checking ID</span>
+      <p>Asking the host to let you back in as <b>${esc(S.rejoin_pending)}</b>.
+        Your seat holds a secret word, so they have to confirm it's really you.</p>
+      <p class="center dim" style="margin:6px 0 0">Waiting for the host<span class="dots"><i></i><i></i><i></i></span></p>
+    </section>
+    <p class="center dim enter-2">If the round ends first, you'll get your seat back automatically.</p>
+    <button class="btn btn-quiet enter-3" onclick="send('cancel_rejoin')">Cancel</button>
+  </div>`;
+}
+
+// Host only: devices waiting to take back an offline player's seat.
+function rejoinRequests() {
+  if (!isHost() || !S.rejoin_requests) return '';
+  return S.rejoin_requests.map(r => `<section class="rail enter" data-key="rq-${r.id}">
+    <h3>${esc(r.name)} wants back in</h3>
+    <p class="hint">A new device is asking for ${esc(r.name)}'s seat. Only let it in if ${esc(r.name)} tells you it's
+      them, since the seat holds their secret word.</p>
+    <div class="btns"><button class="btn btn-brass" data-n="${esc(r.name)}"
+        onclick="if(confirm('Is '+this.dataset.n+' really on this new device? They will see their word.'))send('approve_rejoin',{target:'${r.id}'})">Let them in</button>
+      <button class="btn btn-chalk" onclick="send('deny_rejoin',{target:'${r.id}'})">Deny</button></div>
+  </section>`).join('');
+}
+
 function doJoin() {
   const n = $('#name').value.trim();
   if (!n) return toast('Enter a name first.');
@@ -660,10 +688,10 @@ function build() {
     const key = `screen-${S.phase}-${S.round}`;
     return {key, html: viewScreen(key)};
   }
-  if (!S.you) return {key: 'join', html: viewJoin()};
+  if (!S.you) return S.rejoin_pending ? {key: 'rejoin', html: viewRejoinWait()} : {key: 'join', html: viewJoin()};
   const key = `${S.phase}-${S.round}`;
   const views = {lobby: viewLobby, playing: viewPlaying, voting: viewVoting, reveal: viewReveal, guess: viewGuess, results: viewResults};
-  return {key, html: topBar() + `<main data-key="${key}">${views[S.phase](key)}</main>`};
+  return {key, html: topBar() + `<main data-key="${key}">${rejoinRequests()}${views[S.phase](key)}</main>`};
 }
 
 function render() {

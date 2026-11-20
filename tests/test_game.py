@@ -69,15 +69,60 @@ def test_seat_in_a_live_round_cannot_be_taken_by_name(bank):
     """Otherwise a spy could open a private window, type an offline civilian's name, and read the word."""
     g, ids = new_game(bank)
     g.start(ids[0], T0)
-    victim = next(p for p in g.round_players if p not in g.spies)
+    victim = next(p for p in g.round_players if p not in g.spies and p != g.host_id)
+    word = g.word
     g.set_online(victim, False, T0)
-    with pytest.raises(GameError, match="in this round"):
-        g.join("snoopertab", g.players[victim].name, T0 + 5)
+    g.join("snoopertab", g.players[victim].name, T0 + 5)
     assert "snoopertab" not in g.players and victim in g.round_players
-    # Once the round is over (words are public anyway), the seat can be reclaimed.
+    st = g.state_for("snoopertab", T0 + 5)
+    assert st["you"] is None and st["rejoin_pending"] == g.players[victim].name
+    assert word not in json.dumps(st)
+    # Only the host is told about the request.
+    assert [r["seat"] for r in g.state_for(g.host_id, T0)["rejoin_requests"]] == [victim]
+    assert "rejoin_requests" not in g.state_for(victim, T0)
+
+
+def test_host_can_let_a_player_back_in_mid_round(bank):
+    g, ids = new_game(bank)
+    g.start(ids[0], T0)
+    victim = next(p for p in g.round_players if p != g.host_id)
+    role_word, was_spy = g.word_for(victim), victim in g.spies
+    g.set_online(victim, False, T0)
+    g.join("newphone01", g.players[victim].name, T0 + 5)
+    with pytest.raises(GameError, match="host"):
+        g.approve_rejoin(next(p for p in ids if p not in (g.host_id, victim)), "newphone01")
+    g.approve_rejoin(g.host_id, "newphone01")
+    assert victim not in g.players and "newphone01" in g.round_players
+    assert g.word_for("newphone01") == role_word and ("newphone01" in g.spies) == was_spy
+    assert g.rejoin_requests == {}
+
+
+def test_rejoin_request_can_be_denied_or_dropped(bank):
+    g, ids = new_game(bank)
+    g.start(ids[0], T0)
+    victim = next(p for p in g.round_players if p != g.host_id)
+    g.set_online(victim, False, T0)
+    g.join("newphone01", g.players[victim].name, T0 + 5)
+    g.deny_rejoin(g.host_id, "newphone01")
+    assert g.state_for("newphone01", T0)["rejoin_pending"] is None
+    # A request is dropped if the player comes back on their original phone.
+    g.join("newphone02", g.players[victim].name, T0 + 6)
+    g.set_online(victim, True, T0 + 7)
+    assert g.tick(T0 + 7) and g.rejoin_requests == {}
+    with pytest.raises(GameError):
+        g.approve_rejoin(g.host_id, "newphone02")
+
+
+def test_waiting_rejoin_goes_through_when_the_round_ends(bank):
+    g, ids = new_game(bank)
+    g.start(ids[0], T0)
+    victim = next(p for p in g.round_players if p != g.host_id)
+    name = g.players[victim].name
+    g.set_online(victim, False, T0)
+    g.join("newphone01", name, T0 + 5)
     g.back_to_lobby(g.host_id)
-    g.join("snoopertab", g.players[victim].name, T0 + 10)
-    assert "snoopertab" in g.players
+    assert g.tick(T0 + 6)
+    assert g.players["newphone01"].name == name and victim not in g.players
 
 
 def test_only_host_can_start_and_needs_three_players(bank):

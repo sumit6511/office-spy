@@ -39,6 +39,7 @@ GUESS_SECONDS = 45
 REVEAL_SECONDS = 10
 HOST_HANDOVER_SECONDS = 15
 OFFLINE_TURN_GRACE = 6
+MAX_REJOIN_REQUESTS = 10
 
 LOBBY, PLAYING, VOTING, REVEAL, GUESS, RESULTS = "lobby", "playing", "voting", "reveal", "guess", "results"
 CLASSIC, UNDERCOVER = "classic", "undercover"
@@ -98,6 +99,9 @@ class Game:
         self.round = 0
         self.codename = ""
         self.used: set[str] = set()
+        # New device -> the offline seat it asked for. Mid-round a seat holds a secret word, so the host
+        # has to approve the hand-over; once the round is over the request goes through on its own.
+        self.rejoin_requests: dict[str, str] = {}
         self._reset_round()
 
     def _reset_round(self):
@@ -180,15 +184,16 @@ class Game:
         if clash:
             if clash.online or me:
                 raise GameError("That name is taken.")
-            if clash.id in self.round_players and self.phase not in (LOBBY, RESULTS):
+            if self._seat_is_secret(clash.id):
                 # Their seat holds a secret role right now. Handing it over by name alone would let
-                # anyone read another player's word, so they must come back on their own device.
-                raise GameError("That player is in this round. Reopen the game on their original "
-                                "phone, or wait for the round to end.")
+                # anyone read another player's word, so the host has to vouch for the new device.
+                if pid not in self.rejoin_requests and len(self.rejoin_requests) >= MAX_REJOIN_REQUESTS:
+                    raise GameError("Too many people are waiting to rejoin. Try again in a moment.")
+                self.rejoin_requests[pid] = clash.id
+                log.info("A new device asked to take %s's seat", clash.name)
+                return
             # Same person on a new tab/device: hand their old seat (and score) over.
-            self._rekey(clash.id, pid)
-            clash.online, clash.offline_since = True, None
-            log.info("%s rejoined", clash.name)
+            self._hand_over(clash.id, pid)
             return
         if not me:
             if len(self.players) >= MAX_PLAYERS:
@@ -205,6 +210,48 @@ class Game:
         if self.host_id not in self.players:
             self.host_id = pid
 
+    def _seat_is_secret(self, seat: str) -> bool:
+        return seat in self.round_players and self.phase not in (LOBBY, RESULTS)
+
+    def _hand_over(self, seat: str, pid: str):
+        p = self.players[seat]
+        self.rejoin_requests.pop(pid, None)
+        self._rekey(seat, pid)
+        p.online, p.offline_since = True, None
+        log.info("%s rejoined from a new device", p.name)
+
+    def approve_rejoin(self, pid: str, requester):
+        self._require_host(pid)
+        seat = self.rejoin_requests.get(requester)
+        if not seat:
+            raise GameError("That request is no longer waiting.")
+        p = self.players.get(seat)
+        if not p or p.online:
+            del self.rejoin_requests[requester]
+            raise GameError("That player is already back on their own phone.")
+        self._hand_over(seat, requester)
+
+    def deny_rejoin(self, pid: str, requester):
+        self._require_host(pid)
+        if self.rejoin_requests.pop(requester, None) is None:
+            raise GameError("That request is no longer waiting.")
+
+    def cancel_rejoin(self, pid: str):
+        self.rejoin_requests.pop(pid, None)
+
+    def _settle_rejoins(self) -> bool:
+        """Drop requests that no longer make sense, and let through any whose seat is no longer secret."""
+        changed = False
+        for req, seat in list(self.rejoin_requests.items()):
+            p = self.players.get(seat)
+            if not p or p.online or req in self.players:
+                del self.rejoin_requests[req]
+                changed = True
+            elif not self._seat_is_secret(seat):
+                self._hand_over(seat, req)
+                changed = True
+        return changed
+
     def _rekey(self, old: str, new: str):
         def sub(x):
             return new if x == old else x
@@ -220,6 +267,7 @@ class Game:
         for c in self.clues:
             c["pid"] = sub(c["pid"])
         self.accused, self.last_out, self.host_id = sub(self.accused), sub(self.last_out), sub(self.host_id)
+        self.rejoin_requests = {k: sub(v) for k, v in self.rejoin_requests.items()}
 
     def set_online(self, pid: str, online: bool, now: float):
         p = self.players.get(pid)
@@ -525,7 +573,7 @@ class Game:
 
     def tick(self, now: float) -> bool:
         """Advance anything whose time is up. Returns True if state changed."""
-        changed = False
+        changed = self._settle_rejoins()
 
         host = self.players.get(self.host_id)
         if host and not host.online and host.offline_since and now - host.offline_since >= HOST_HANDOVER_SECONDS:
@@ -586,9 +634,13 @@ class Game:
                  "in_round": x.id in self.round_players, "alive": x.id in self.alive}
                 for x in self.players.values()
             ],
+            "rejoin_pending": self.name(self.rejoin_requests[pid]) if pid in self.rejoin_requests else None,
             "seconds_left": max(0.0, self.deadline - now) if self.deadline else None,
             "seconds_total": self.deadline_len,
         }
+        if p and p.id == self.host_id and self.rejoin_requests:
+            st["rejoin_requests"] = [{"id": req, "seat": seat, "name": self.name(seat)}
+                                     for req, seat in self.rejoin_requests.items()]
         if ph == LOBBY:
             return st
 

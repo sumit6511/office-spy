@@ -67,7 +67,8 @@ The UI is designed as a card table: green felt, manila case files, rubber stamps
 - A phone that sleeps, refreshes or closes the tab rejoins with the same role. Each device keeps a private
   token, and other players only ever see a separate public id, so nobody can connect as someone else.
 - If someone switches browsers or devices, they can rejoin with **the same name** and get their seat (and score)
-  back, but only between rounds. During a round that seat holds a secret word, so it stays with the original device.
+  back. During a round that seat holds a secret word, so the host gets a **Let them in / Deny** card and has to
+  confirm it's really them. If the round ends first, the seat is handed over automatically.
 - Offline players are skipped on their typed turn and don't hold up the vote.
 - The server only ever sends each player **their own** word. Opening dev tools won't reveal anything,
   and the secret word is never printed in the host's terminal either.

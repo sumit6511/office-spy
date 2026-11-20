@@ -140,3 +140,26 @@ def test_kicked_player_is_told_and_oversized_messages_are_refused(url):
         for ws in conns:
             await ws.close()
     asyncio.run(run())
+
+
+def test_host_approves_a_new_device_mid_round(url):
+    async def run():
+        tokens, conns = await table(url, 4)
+        await conns[0].send(json.dumps({"type": "start"}))
+        before = await latest(conns[2])
+        await conns[2].close()  # Agent2's phone dies
+        await asyncio.sleep(0.2)
+
+        new = await websockets.connect(f"{url}?token={'n' * 24}")
+        await new.send(json.dumps({"type": "join", "name": "Agent2"}))
+        waiting = await latest(new)
+        assert waiting["you"] is None and waiting["rejoin_pending"] == "Agent2" and "role" not in waiting
+
+        host = await latest(conns[0])
+        [req] = host["rejoin_requests"]
+        await conns[0].send(json.dumps({"type": "approve_rejoin", "target": req["id"]}))
+        back = await latest(new)
+        assert back["you"]["name"] == "Agent2" and back["role"] == before["role"]
+        for ws in [*conns[:2], conns[3], new]:
+            await ws.close()
+    asyncio.run(run())
