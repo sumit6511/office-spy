@@ -48,7 +48,9 @@ It's saved to `data/scores.json` by player name, so it survives restarting the s
 
 ## Host tools
 - Game setup: mode, clue style, category, number of spies (1–3), timer or clue laps, whether the spy sees the category
-- **Custom word packs:** add your own (office in-jokes, team names, local places). They're saved to `data/custom_words.json`
+- **Custom word packs:** add your own (office in-jokes, team names, local places). They're saved to `data/custom_words.json`.
+- **Custom Undercover pairs:** two similar words per line, like `Printer / Scanner` or `Standup vs Retro`. Saved to
+  `data/custom_pairs.json`. Use the same name as a word pack to give one pack both Classic words and Undercover pairs.
 - Skip a player's turn, start voting early, end voting, end the round
 - Remove players, hand over host, reset the scoreboard
 - If the host's phone is offline for 15 seconds, hosting passes to the next player automatically
@@ -92,6 +94,7 @@ office-spy/
 │   ├── words.json     # Classic word packs (6 categories)
 │   ├── pairs.json     # Undercover word pairs (6 categories)
 │   ├── custom_words.json   # created when the host adds a pack (not committed)
+│   ├── custom_pairs.json   # host-made Undercover pairs (not committed)
 │   └── scores.json         # saved scoreboard (not committed)
 ├── static/
 │   ├── index.html

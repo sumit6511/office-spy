@@ -351,6 +351,14 @@ class Game:
         except WordBankError as e:
             raise GameError(str(e)) from None
 
+    def add_pairs(self, pid: str, name, pairs):
+        self._require_host(pid)
+        self._require_phase(LOBBY, RESULTS)
+        try:
+            self.settings["category"] = self.bank.add_pairs(name, pairs)
+        except WordBankError as e:
+            raise GameError(str(e)) from None
+
     def delete_pack(self, pid: str, name):
         self._require_host(pid)
         self._require_phase(LOBBY, RESULTS)

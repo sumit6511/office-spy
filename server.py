@@ -111,6 +111,7 @@ def dispatch(pid: str, msg: dict, now: float):
         "make_host": lambda: g.make_host(pid, msg.get("target")),
         "reset_scores": lambda: g.reset_scores(pid),
         "add_pack": lambda: g.add_pack(pid, msg.get("name"), msg.get("words")),
+        "add_pairs": lambda: g.add_pairs(pid, msg.get("name"), msg.get("pairs")),
         "delete_pack": lambda: g.delete_pack(pid, msg.get("name")),
         "approve_rejoin": lambda: g.approve_rejoin(pid, msg.get("target")),
         "deny_rejoin": lambda: g.deny_rejoin(pid, msg.get("target")),

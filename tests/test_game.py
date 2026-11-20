@@ -410,3 +410,40 @@ def test_scoreboard_survives_a_restart(bank, tmp_path):
     g2.reset_scores("newtokenid")
     saved = Game(bank, scores_path=path).saved_scores
     assert set(saved) == {"player1"} and saved["player1"]["score"] == saved["player1"]["games"] == 0
+
+
+# ---------------------------------------------------------------- custom undercover pairs
+
+def test_custom_pairs_are_parsed_and_used_in_undercover(bank):
+    g, ids = new_game(bank, mode=G.UNDERCOVER)
+    g.add_pairs(ids[0], "Our Office", "Printer / Scanner\nStandup | Retro\nKettle vs Coffee machine\nLunch, Brunch\n\n")
+    assert bank.custom_pairs["Our Office"][2] == ["Kettle", "Coffee machine"]
+    assert g.settings["category"] == "Our Office"
+    cat = next(c for c in bank.categories() if c["name"] == "Our Office")
+    assert cat == {"name": "Our Office", "words": 0, "pairs": 4, "custom": True}
+    g.start(ids[0], T0)
+    assert g.category == "Our Office"
+    assert sorted([g.word, g.spy_word]) in [sorted(p) for p in bank.custom_pairs["Our Office"]]
+    # Saved to disk, and reloaded.
+    assert WordBank(bank.data_dir).custom_pairs == bank.custom_pairs
+
+
+def test_bad_custom_pairs_are_rejected_with_a_helpful_message(bank):
+    g, ids = new_game(bank)
+    with pytest.raises(GameError, match="Line 2 needs exactly two"):
+        g.add_pairs(ids[0], "P", "A / B\nJustOne\nC / D")
+    with pytest.raises(GameError, match="must be different"):
+        g.add_pairs(ids[0], "P", "A / B\nTea / tea\nC / D")
+    with pytest.raises(GameError, match="at least 3"):
+        g.add_pairs(ids[0], "P", "A / B\nB / A\nC / D")  # duplicates count once
+    with pytest.raises(GameError, match="built-in"):
+        g.add_pairs(ids[0], "Office", "A / B\nC / D\nE / F")
+
+
+def test_one_custom_pack_can_have_words_and_pairs(bank):
+    g, ids = new_game(bank)
+    g.add_pack(ids[0], "Team", ["a", "b", "c", "d", "e", "f"])
+    g.add_pairs(ids[0], "Team", "A / B\nC / D\nE / F")
+    assert [c for c in bank.categories() if c["name"] == "Team"][0]["words"] == 6
+    g.delete_pack(ids[0], "Team")
+    assert not bank.has_category("Team") and "Team" not in WordBank(bank.data_dir).custom_pairs

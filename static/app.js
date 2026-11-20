@@ -23,7 +23,7 @@ if (!token) { token = newToken(); store.set(TOKEN_KEY, token); }
 
 let ws, S = null, recvAt = 0, connected = false, removed = false;
 let lastViewKey = '', lastPhase = null, lastTickSec = null;
-const ui = {folderOpen: false, folderKey: '', slip: false, packSent: false};
+const ui = {folderOpen: false, folderKey: '', slip: false, packSent: false, pairsSent: null};
 const typedClues = new Set();
 let clueMark = {view: '', count: 0};
 
@@ -446,7 +446,7 @@ function setup() {
       <p class="hint" style="margin-bottom:0">${esc(bits.join(', '))}.</p>
       <p class="center" style="margin:14px 0 2px">Waiting for the host to deal<span class="dots"><i></i><i></i><i></i></span></p></section>`;
   }
-  const cats = S.categories.filter(c => !uc || c.pairs);
+  const cats = S.categories.filter(c => (uc ? c.pairs : c.words));
   const opt = (vals, cur) => vals.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(cur) ? 'selected' : ''}>${esc(l)}</option>`).join('');
   return `<section class="rail" data-key="setup-host"><h3>Deal a game</h3>
     <label class="f">Mode</label>
@@ -476,16 +476,27 @@ function hostTools() {
   const custom = S.categories.filter(c => c.custom);
   return `<details class="rail" id="tools" data-key="tools"><summary>Host tools</summary><div class="inner">
     <h3 style="margin-top:16px">Your word packs</h3>
-    ${custom.length ? custom.map(c => `<div class="pack" data-key="pk-${esc(c.name)}"><span>${esc(c.name)} <span class="badge">${c.words} words</span></span>
+    ${custom.length ? custom.map(c => `<div class="pack" data-key="pk-${esc(c.name)}"><span>${esc(c.name)}${c.words ? ` <span class="badge">${c.words} words</span>` : ''}${c.pairs ? ` <span class="badge">${c.pairs} pairs</span>` : ''}</span>
         <button class="iconbtn" aria-label="Delete ${esc(c.name)}" data-n="${esc(c.name)}" onclick="if(confirm('Delete this word pack?'))send('delete_pack',{name:this.dataset.n})">✕</button></div>`).join('')
       : '<p class="hint">Make a pack from office in-jokes, team names or places near the office.</p>'}
     <input class="field" id="packname" maxlength="30" placeholder="Pack name, like Our Office">
     <textarea class="field" id="packwords" placeholder="At least 6 words, separated by commas or new lines"></textarea>
     <button class="btn btn-chalk" onclick="addPack()">Add word pack</button>
-    <p class="hint">Packs are saved on the host's computer and work in Classic mode.</p>
+    <p class="hint">Words are for Classic mode. Packs are saved on the host's computer.</p>
+    <h3 style="margin-top:18px">Undercover pairs</h3>
+    <p class="hint">Two similar words per line. Use the same pack name to add pairs to a word pack.</p>
+    <input class="field" id="pairname" maxlength="30" placeholder="Pack name, like Our Office">
+    <textarea class="field" id="pairwords" placeholder="At least 3 pairs, one per line:&#10;Printer / Scanner&#10;Standup / Retro"></textarea>
+    <button class="btn btn-chalk" onclick="addPairs()">Add pairs</button>
     <h3 style="margin-top:18px">Scoreboard</h3>
     <button class="btn btn-chalk" onclick="if(confirm('Reset every score to zero?'))send('reset_scores')">Reset scores</button>
   </div></details>`;
+}
+function addPairs() {
+  const name = $('#pairname').value.trim();
+  const cat = S.categories.find(c => c.name === name);
+  ui.pairsSent = {name, before: cat ? cat.pairs : 0, text: $('#pairwords').value};
+  send('add_pairs', {name, pairs: ui.pairsSent.text});
 }
 function addPack() {
   send('add_pack', {name: $('#packname').value, words: $('#packwords').value});
@@ -709,12 +720,21 @@ function render() {
 function afterRender(key) {
   if (S) {
     clueMark = {view: key, count: (S.clues || []).length};
-    if (ui.packSent && S.categories.some(c => c.custom && c.name === ui.packSent)) {
+    if (ui.packSent && S.categories.some(c => c.custom && c.words && c.name === ui.packSent)) {
       const n = $('#packname'), w = $('#packwords');
       if (n) n.value = '';
       if (w) w.value = '';
       toast(`Added the ${ui.packSent} pack.`, true);
       ui.packSent = false;
+    }
+    const ps = ui.pairsSent;
+    const cat = ps && S.categories.find(c => c.custom && c.name === ps.name);
+    if (cat && cat.pairs && cat.pairs !== ps.before) {
+      const n = $('#pairname'), w = $('#pairwords');
+      if (n) n.value = '';
+      if (w) w.value = '';
+      toast(`Saved ${cat.pairs} Undercover pairs in ${ps.name}.`, true);
+      ui.pairsSent = null;
     }
     lastPhase = S.phase;
   }
