@@ -35,6 +35,10 @@ the results, but never anyone's word.
 | Spies win when | an innocent is voted out, it's a tie, or the spy guesses the word | they survive until it's 1-on-1 |
 
 In Classic, the spy can tap **"🎯 I know the word!"** at any time to reveal themselves and guess early.
+**🎩 Mr. White (Undercover option, 4+ players):** one extra player gets no word at all, and knows it. They bluff
+along; if they're voted out they get one typed guess at the civilians' word. A right guess wins the round for
+Mr. White alone (+3). Otherwise Mr. White is out and plays on the undercover side.
+
 With 2–3 spies in Classic, the round is decided by the first spy who is caught (or reveals themselves):
 if they guess the word, the spies win; if not, the civilians win, even if the other spies were never found.
 
@@ -47,7 +51,7 @@ if they guess the word, the spies win; if not, the civilians win, even if the ot
 It's saved to `data/scores.json` by player name, so it survives restarting the server. The host can reset it.
 
 ## Host tools
-- Game setup: mode, clue style, category, number of spies (1–3), timer or clue laps, whether the spy sees the category
+- Game setup: mode, clue style, category, number of spies (1–3), timer or clue laps, whether the spy sees the category, Mr. White on/off
 - **Custom word packs:** add your own (office in-jokes, team names, local places). They're saved to `data/custom_words.json`.
 - **Custom Undercover pairs:** two similar words per line, like `Printer / Scanner` or `Standup vs Retro`. Saved to
   `data/custom_pairs.json`. Use the same name as a word pack to give one pack both Classic words and Undercover pairs.

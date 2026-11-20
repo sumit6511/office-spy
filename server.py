@@ -105,7 +105,7 @@ def dispatch(pid: str, msg: dict, now: float):
         "end_vote": lambda: g.end_vote(pid, now),
         "continue": lambda: g.continue_round(pid, now),
         "spy_reveal": lambda: g.spy_reveal(pid, now),
-        "guess": lambda: g.submit_guess(pid, msg.get("word")),
+        "guess": lambda: g.submit_guess(pid, msg.get("word"), now),
         "lobby": lambda: g.back_to_lobby(pid),
         "kick": lambda: g.kick(pid, msg.get("target")),
         "make_host": lambda: g.make_host(pid, msg.get("target")),

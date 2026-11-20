@@ -223,7 +223,8 @@ function cues(a, b) {
     else if (b.phase === 'reveal') Sound.fx.stamp();
     else if (b.phase === 'results') {
       const mine = b.you && b.you.in_round;
-      const won = mine ? (b.winner === 'spies') === b.spies.includes(me) : true;
+      const won = !mine ? true : b.winner === 'white' ? me === b.white
+        : (b.winner === 'spies') === (b.spies.includes(me) || me === b.white);
       Sound.fx.stamp();
       setTimeout(() => (won ? Sound.fx.win() : Sound.fx.lose()), 650);
       if (won) setTimeout(shreds, 500);
@@ -294,7 +295,13 @@ function caseFile() {
   if (ui.folderKey !== key) { ui.folderKey = key; ui.folderOpen = false; ui.slip = false; }
   const open = ui.folderOpen;
   let body, stamp = '';
-  if (UC()) {
+  if (UC() && r.mr_white) {
+    body = `<p class="meta">Category: ${esc(r.category)}</p>
+      <div class="word"><span class="redacted-word">no word</span></div>
+      <p class="note">You're Mr. White: everyone else has a word, you don't. Bluff along. If you're voted out,
+        guess the civilians' word and you win on your own.</p>`;
+    stamp = '<span class="stamp red slam" style="font-size:44px">Mr. White</span>';
+  } else if (UC()) {
     body = `<p class="meta">Your word</p><div class="word">${esc(r.word)}</div>
       <p class="note">Most of the table shares this word. One of you holds a similar one, and it might be you.</p>`;
     stamp = '<span class="stamp blue small slam">Eyes only</span>';
@@ -325,7 +332,7 @@ function caseFile() {
 }
 function toggleFile() {
   ui.folderOpen = !ui.folderOpen;
-  if (ui.folderOpen) { Sound.fx.flip(); if (S.role && S.role.spy) Sound.fx.stamp(); buzz(30); }
+  if (ui.folderOpen) { Sound.fx.flip(); if (S.role && (S.role.spy || S.role.mr_white)) Sound.fx.stamp(); buzz(30); }
   render();
 }
 
@@ -333,7 +340,7 @@ function toggleFile() {
 function slip() {
   const r = S.role;
   if (!r) return '';
-  const w = UC() || !r.spy ? esc(r.word) : 'You are the spy';
+  const w = r.mr_white ? 'You are Mr. White' : UC() || !r.spy ? esc(r.word) : 'You are the spy';
   return `<div class="paper slip ${ui.slip ? 'show' : ''}" data-key="slip-${S.round}" role="button" tabindex="0"
       onclick="ui.slip=!ui.slip;render()" aria-label="${ui.slip ? 'Hide your word' : 'Show your word'}">
     <span class="meta">${ui.slip ? 'Tap to hide' : 'Your file, tap to peek'}</span><span class="w">${w}</span></div>`;
@@ -362,7 +369,8 @@ function clueLog(viewKey, title = 'Transmission log') {
 
 function spyCount() {
   const n = S.spy_count;
-  return `<p class="center dim" data-key="spycount">${cap(UC() ? `${plural(n, 'player has', 'players have')} a different word.` : `${plural(n, 'spy is', 'spies are')} at this table.`)}</p>`;
+  const white = S.white_in_play ? ' Mr. White has no word at all.' : '';
+  return `<p class="center dim" data-key="spycount">${cap(UC() ? `${plural(n, 'player has', 'players have')} a different word.${white}` : `${plural(n, 'spy is', 'spies are')} at this table.`)}</p>`;
 }
 
 function hostRow(btns, key = 'hostrow') {
@@ -431,7 +439,7 @@ function tray(key, options) {
 }
 function setS(key, value) {
   if (['spies', 'minutes', 'clue_rounds'].includes(key)) value = +value;
-  if (key === 'spy_sees_category') value = !!value;
+  if (key === 'spy_sees_category' || key === 'mr_white') value = !!value;
   send('settings', {settings: {[key]: value}});
 }
 
@@ -442,6 +450,7 @@ function setup() {
     const bits = [uc ? 'Undercover' : 'Classic', s.clue_mode === 'typed' ? 'typed clues' : 'talking out loud', s.category === 'Random' ? 'random category' : s.category,
       plural(s.spies, uc ? 'undercover player' : 'spy', uc ? 'undercover players' : 'spies'),
       s.clue_mode === 'talk' ? `${s.minutes} minutes` : plural(s.clue_rounds, 'lap', 'laps')];
+    if (uc && s.mr_white) bits.push('with Mr. White');
     return `<section class="rail" data-key="setup-guest"><h3>Tonight's game</h3>
       <p class="hint" style="margin-bottom:0">${esc(bits.join(', '))}.</p>
       <p class="center" style="margin:14px 0 2px">Waiting for the host to deal<span class="dots"><i></i><i></i><i></i></span></p></section>`;
@@ -465,7 +474,9 @@ function setup() {
         ? `<div><label class="f" for="mins">Discussion</label><select id="mins" onchange="setS('minutes', this.value)">${opt([2, 3, 4, 5, 6, 8, 10].map(m => [m, `${m} min`]), s.minutes)}</select></div>`
         : `<div><label class="f" for="laps">Clue laps</label><select id="laps" onchange="setS('clue_rounds', this.value)">${opt([[1, '1 lap'], [2, '2 laps'], [3, '3 laps']], s.clue_rounds)}</select></div>`}
     </div>
-    ${uc ? '' : `<label class="switch">Spy sees the category<input type="checkbox" ${s.spy_sees_category ? 'checked' : ''} onchange="setS('spy_sees_category', this.checked)"></label>`}
+    ${uc ? `<label class="switch">Mr. White (one player gets no word)<input type="checkbox" ${s.mr_white ? 'checked' : ''} onchange="setS('mr_white', this.checked)"></label>
+      ${s.mr_white ? '<p class="hint">Mr. White knows they have no word. If voted out, they guess the word to win. Needs 4 players.</p>' : ''}`
+      : `<label class="switch">Spy sees the category<input type="checkbox" ${s.spy_sees_category ? 'checked' : ''} onchange="setS('spy_sees_category', this.checked)"></label>`}
     <button class="btn btn-brass" style="margin-top:18px" ${need > 0 ? 'disabled' : ''} onclick="send('start')">
       ${need > 0 ? `Waiting for ${plural(need, 'more player', 'more players')}` : 'Deal the cards'}</button>
   </section>`;
@@ -579,9 +590,14 @@ function viewReveal(vk) {
     line = 'The vote tied, so nobody leaves. Another round of clues.';
   } else {
     const was = S.eliminated.find(e => e.pid === S.last_out);
-    stamp = was.undercover ? '<span class="stamp red slam">Undercover</span>' : '<span class="stamp blue slam">Civilian</span>';
-    line = was.undercover ? `${nameOf(S.last_out)} had the different word. Is anyone else still hiding?`
-                          : `${nameOf(S.last_out)} was innocent. The undercover player is still at the table.`;
+    if (was.role === 'white') {
+      stamp = '<span class="stamp red slam">Mr. White</span>';
+      line = `${nameOf(S.last_out)} was Mr. White, with no word. ${S.white_guess ? `They guessed “${esc(S.white_guess)}”. Wrong!` : 'They ran out of time to guess.'}`;
+    } else {
+      stamp = was.undercover ? '<span class="stamp red slam">Undercover</span>' : '<span class="stamp blue slam">Civilian</span>';
+      line = was.undercover ? `${nameOf(S.last_out)} had the different word. Is anyone else still hiding?`
+                            : `${nameOf(S.last_out)} was innocent. The undercover player is still at the table.`;
+    }
   }
   const who = S.last_out && !S.tie ? `<div class="agents" style="margin:0 0 14px">${`<span class="agent">${chip(S.last_out, 'sm')}${nameOf(S.last_out)} is out</span>`}</div>` : '';
   return `<section class="paper verdict drop" data-key="verdict-${S.discussion}">${who}${stamp}<p>${line}</p></section>
@@ -592,6 +608,22 @@ function viewReveal(vk) {
 
 function viewGuess() {
   const name = nameOf(S.accused);
+  if (UC()) {
+    if (S.white_guessing) {
+      return `<section class="paper verdict drop" data-key="white-guess">
+        <span class="stamp red slam">Mr. White</span>
+        <p>You're out, but you get one guess. Name the civilians' word and you win on your own.</p>
+        ${clock('sm')}
+        <form class="cluefield" onsubmit="event.preventDefault();sendWhiteGuess()">
+          <input id="wguess" maxlength="30" autocomplete="off" enterkeyhint="send" placeholder="The word is…" aria-label="Your guess">
+          <button class="btn btn-brass">Guess</button></form></section>`;
+    }
+    return `<section class="paper verdict drop" data-key="white-accused">
+        <div class="agents" style="margin:0 0 14px"><span class="agent spy">${chip(S.accused, 'sm')}${name}</span></div>
+        <span class="stamp red slam">Mr. White</span>
+        <p>${name} had no word. They get one guess at the civilians' word, and if it's right, Mr. White wins.</p></section>
+      ${clock()}`;
+  }
   if (S.guess_options) {
     return `<section class="paper verdict drop" data-key="lastchance">
       <span class="stamp red slam">${S.self_reveal ? 'Your guess' : 'Caught'}</span>
@@ -607,16 +639,25 @@ function viewGuess() {
     ${clock()}`;
 }
 
+function sendWhiteGuess() {
+  const el = $('#wguess');
+  if (!el.value.trim()) return toast('Type your guess first.');
+  if (confirm(`Lock in “${el.value.trim()}”?`)) send('guess', {word: el.value});
+}
+
 function viewResults(vk) {
   const uc = UC(), spiesWon = S.winner === 'spies';
-  const stampText = uc ? (spiesWon ? 'Undercover wins' : 'Case closed') : (spiesWon ? 'Spy escapes' : 'Spy caught');
+  const whiteWon = S.winner === 'white';
+  const stampText = whiteWon ? 'Mr. White wins' : uc ? (spiesWon ? 'Undercover wins' : 'Case closed') : (spiesWon ? 'Spy escapes' : 'Spy caught');
   const words = uc
     ? `<div class="pair"><div><p class="meta">Civilians had</p><div class="word">${esc(S.word)}</div></div>
-        <div><p class="meta">Undercover had</p><div class="word">${esc(S.spy_word)}</div></div></div>`
+        <div><p class="meta">Undercover had</p><div class="word">${esc(S.spy_word)}</div></div></div>
+        ${S.white ? `<p class="meta">Mr. White had no word${S.white_guess ? ` and guessed “${esc(S.white_guess)}”` : ''}</p>` : ''}`
     : `<p class="meta">The word was</p><div class="word">${esc(S.word)}</div>${S.guess ? `<p class="meta">The spy guessed “${esc(S.guess)}”</p>` : ''}`;
-  const agents = S.spies.map(id => `<span class="agent spy">${chip(id, 'sm')}${nameOf(id)}</span>`).join('');
+  const agents = S.spies.map(id => `<span class="agent spy">${chip(id, 'sm')}${nameOf(id)}</span>`).join('')
+    + (S.white ? `<span class="agent spy">${chip(S.white, 'sm')}${nameOf(S.white)} (Mr. White)</span>` : '');
   const out = uc && S.eliminated.length ? `<section class="rail" data-key="out"><h3>Voted out, in order</h3><ul class="roster">${S.eliminated.map((e, i) =>
-    `<li data-key="e-${e.pid}"><span class="medal">${i + 1}</span>${chip(e.pid, 'sm')}<span class="nm">${nameOf(e.pid)}</span><span class="badge">${e.undercover ? 'undercover' : 'civilian'}</span></li>`).join('')}</ul></section>` : '';
+    `<li data-key="e-${e.pid}"><span class="medal">${i + 1}</span>${chip(e.pid, 'sm')}<span class="nm">${nameOf(e.pid)}</span><span class="badge">${e.role === 'white' ? 'Mr. White' : e.undercover ? 'undercover' : 'civilian'}</span></li>`).join('')}</ul></section>` : '';
   const sorted = [...S.players].sort((a, b) => b.score - a.score || b.wins - a.wins);
   const board = `<section class="rail" data-key="board"><h3>Scoreboard</h3><ul class="roster board">${sorted.map((p, i) =>
     `<li class="enter" style="--i:${i}" data-key="s-${p.id}"><span class="medal">${i + 1}</span>${chip(p.id)}<span class="nm">${esc(p.name)}<small>won ${num(p.wins)} of ${num(p.games)}</small></span><span class="pts">${p.score}</span></li>`).join('')}</ul></section>`;
@@ -624,7 +665,7 @@ function viewResults(vk) {
     ? `<div data-key="ctl"><button class="btn btn-brass" onclick="send('start')">Deal again</button><button class="btn btn-chalk" onclick="send('lobby')">Change settings</button></div>`
     : (S.you ? '<p class="center dim" data-key="ctl">Waiting for the host to deal again<span class="dots"><i></i><i></i><i></i></span></p>' : '');
   return `<section class="paper verdict drop" data-key="verdict-final">
-      <span class="stamp ${spiesWon ? 'red' : 'blue'} slam">${stampText}</span><p>${esc(S.reason)}</p></section>
+      <span class="stamp ${spiesWon || whiteWon ? 'red' : 'blue'} slam">${stampText}</span><p>${esc(S.reason)}</p></section>
     <section class="paper declass enter-2" data-key="declass">${words}<p class="meta">${esc(S.category)}</p><div class="agents">${agents}</div></section>
     ${controls}${out}${uc ? '' : votesCard(S.votes)}${board}${clueLog(vk, 'Clues given')}`;
 }
@@ -672,11 +713,13 @@ function openHelp() {
     <h3>Undercover</h3>
     <ol><li>Most players share a word. The undercover players get a similar one, like Momo and Samosa, and don't know theirs is different.</li>
       <li>Give clues, then vote someone out. Their role is revealed.</li>
-      <li>Civilians win once every undercover player is out. Undercover wins by lasting until it's one on one.</li></ol>
+      <li>Civilians win once every undercover player is out. Undercover wins by lasting until it's one on one.</li>
+      <li><b>Mr. White</b> (optional): one extra player gets no word and knows it. If they're voted out, they get one guess
+        at the civilians' word. A right guess wins the round for Mr. White alone. Otherwise they play with the undercover side.</li></ol>
     <h3>Typed clues</h3>
     <p>When it's your turn, type a short clue on your phone. It shows up in the transmission log for everyone. A clue can't contain your own word.</p>
     <h3>Points</h3>
-    <p>Winning civilians get 1 point each. Winning spies and undercover players get 2.</p>
+    <p>Winning civilians get 1 point each. Winning spies and undercover players get 2. Mr. White gets 3 for guessing the word.</p>
     <button class="btn btn-brass" onclick="closeHelp()">Back to the table</button></div>`;
   el.hidden = false;
   requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('show')));

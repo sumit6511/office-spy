@@ -447,3 +447,80 @@ def test_one_custom_pack_can_have_words_and_pairs(bank):
     assert [c for c in bank.categories() if c["name"] == "Team"][0]["words"] == 6
     g.delete_pack(ids[0], "Team")
     assert not bank.has_category("Team") and "Team" not in WordBank(bank.data_dir).custom_pairs
+
+
+# ---------------------------------------------------------------- mr. white
+
+def white_game(bank, n=5, seed=3):
+    g, ids = new_game(bank, n, seed, mode=G.UNDERCOVER, mr_white=True)
+    g.start(ids[0], T0)
+    return g, ids
+
+
+def vote_out(g, target, now=T0):
+    g.start_vote(g.host_id, now)
+    vote_all(g, target, now)
+
+
+def test_mr_white_knows_and_gets_no_word(bank):
+    g, ids = white_game(bank)
+    assert g.white and g.white not in g.spies
+    st = g.state_for(g.white, T0)
+    assert st["role"]["mr_white"] is True and st["role"]["word"] is None
+    assert g.word not in json.dumps(st) and g.spy_word not in json.dumps(st)
+    civ = next(p for p in g.round_players if not g._impostor(p))
+    assert g.state_for(civ, T0)["role"]["mr_white"] is False
+    assert g.state_for(civ, T0)["white_in_play"] is True
+    # Nobody learns who Mr. White is before they're out.
+    assert g.white not in json.dumps(g.state_for(civ, T0)["eliminated"])
+
+
+def test_mr_white_guessing_right_wins_alone(bank):
+    g, ids = white_game(bank)
+    white = g.white
+    vote_out(g, white)
+    assert g.phase == G.GUESS and g.accused == white
+    assert g.state_for(white, T0)["white_guessing"] and "guess_options" not in g.state_for(white, T0)
+    other = next(p for p in g.round_players if p != white)
+    with pytest.raises(GameError, match="Mr. White"):
+        g.submit_guess(other, g.word, T0)
+    g.submit_guess(white, "  " + g.word.upper() + "!", T0)  # case and punctuation don't matter
+    assert g.winner == G.WHITE
+    assert g.players[white].score == 3
+    assert all(g.players[p].score == 0 for p in g.round_players if p != white)
+
+
+def test_mr_white_guessing_wrong_is_just_out(bank):
+    g, ids = white_game(bank)
+    white = g.white
+    vote_out(g, white)
+    g.submit_guess(white, "definitely not it", T0)
+    assert g.phase == G.REVEAL and white not in g.alive
+    assert g.state_for(ids[0], T0)["white_guess"] == "definitely not it"
+    assert g.state_for(ids[0], T0)["eliminated"][-1]["role"] == "white"
+    # Then catching the undercover agent finishes it for the civilians.
+    g.continue_round(g.host_id, T0)
+    vote_out(g, next(iter(g.spies)))
+    assert g.winner == G.CIVILIANS and "Mr. White" in g.reason
+
+
+def test_mr_white_timeout_and_team_win(bank):
+    g, ids = white_game(bank, n=4, seed=5)
+    white = g.white
+    vote_out(g, white)
+    g.tick(T0 + G.GUESS_SECONDS + 1)
+    assert white not in g.alive and g.phase == G.REVEAL
+    # 1 undercover vs 2 civilians: voting out a civilian ties it, and the undercover side wins.
+    g.continue_round(g.host_id, T0 + 60)
+    vote_out(g, next(p for p in g.alive if not g._impostor(p)), T0 + 60)
+    assert g.winner == G.SPIES
+    assert g.players[white].score == 2  # Mr. White is on the undercover side
+
+
+def test_mr_white_needs_four_players_and_is_undercover_only(bank):
+    g, ids = new_game(bank, 3, mode=G.UNDERCOVER, mr_white=True)
+    with pytest.raises(GameError, match="at least 4"):
+        g.start(ids[0], T0)
+    g, ids = new_game(bank, 4, mode=G.CLASSIC, mr_white=True)
+    g.start(ids[0], T0)
+    assert g.white is None

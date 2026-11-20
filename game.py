@@ -43,7 +43,8 @@ MAX_REJOIN_REQUESTS = 10
 
 LOBBY, PLAYING, VOTING, REVEAL, GUESS, RESULTS = "lobby", "playing", "voting", "reveal", "guess", "results"
 CLASSIC, UNDERCOVER = "classic", "undercover"
-SPIES, CIVILIANS = "spies", "civilians"
+SPIES, CIVILIANS, WHITE = "spies", "civilians", "white"
+MR_WHITE_MIN_PLAYERS = 4
 
 DEFAULT_SETTINGS = {
     "mode": CLASSIC,
@@ -53,6 +54,7 @@ DEFAULT_SETTINGS = {
     "minutes": 5,
     "clue_rounds": 1,
     "spy_sees_category": True,
+    "mr_white": False,  # Undercover only: one extra player gets no word at all
 }
 
 
@@ -114,6 +116,8 @@ class Game:
         self.category: str | None = None
         self.word: str | None = None  # civilians' word
         self.spy_word: str | None = None  # undercover agents' word
+        self.white: str | None = None  # Mr. White (Undercover variant): knows they have no word
+        self.white_guess: str | None = None
         self.deadline: float | None = None
         self.deadline_len: float | None = None
         self.discussion = 0
@@ -161,7 +165,13 @@ class Game:
             return None
         if pid in self.spies:
             return self.spy_word if self.mode == UNDERCOVER else None
+        if pid == self.white:
+            return None
         return self.word
+
+    def _impostor(self, pid: str) -> bool:
+        """On the spies' side: a spy, an undercover agent, or Mr. White."""
+        return pid in self.spies or pid == self.white
 
     @property
     def current_turn(self) -> str | None:
@@ -267,6 +277,7 @@ class Game:
         for c in self.clues:
             c["pid"] = sub(c["pid"])
         self.accused, self.last_out, self.host_id = sub(self.accused), sub(self.last_out), sub(self.host_id)
+        self.white = sub(self.white)
         self.rejoin_requests = {k: sub(v) for k, v in self.rejoin_requests.items()}
 
     def set_online(self, pid: str, online: bool, now: float):
@@ -340,6 +351,8 @@ class Game:
             s["clue_rounds"] = c["clue_rounds"]
         if isinstance(c.get("spy_sees_category"), bool):
             s["spy_sees_category"] = c["spy_sees_category"]
+        if isinstance(c.get("mr_white"), bool):
+            s["mr_white"] = c["mr_white"]
 
     def add_pack(self, pid: str, name, words):
         self._require_host(pid)
@@ -377,6 +390,9 @@ class Game:
         online = [p.id for p in self.players.values() if p.online]
         if len(online) < MIN_PLAYERS:
             raise GameError(f"Need at least {MIN_PLAYERS} connected players.")
+        with_white = self.settings["mode"] == UNDERCOVER and self.settings["mr_white"]
+        if with_white and len(online) < MR_WHITE_MIN_PLAYERS:
+            raise GameError(f"Mr. White needs at least {MR_WHITE_MIN_PLAYERS} connected players.")
 
         try:
             if self.settings["mode"] == UNDERCOVER:
@@ -392,16 +408,19 @@ class Game:
         self.rng.shuffle(online)
         self.round_players = online[:]
         self.alive = online[:]
-        n_spies = min(self.settings["spies"], max(1, (len(online) - 1) // 2))
+        # Keep civilians in the majority: the odd ones out (spies, plus Mr. White) are fewer than half.
+        n_spies = min(self.settings["spies"], max(1, (len(online) - with_white - 1) // 2))
         self.spies = set(self.rng.sample(online, n_spies))
+        if with_white:
+            self.white = self.rng.choice([p for p in online if p not in self.spies])
 
         self.category, self.word, self.spy_word = picked
         for p in online:
             self.players[p].games += 1
 
         # Note: the secret word is deliberately never logged, since the host is usually playing too.
-        log.info("Round %d: %s mode, %s clues, %d players, %d %s", self.round, self.mode,
-                 self.clue_mode, len(online), n_spies, self.spy_label)
+        log.info("Round %d: %s mode, %s clues, %d players, %d %s%s", self.round, self.mode,
+                 self.clue_mode, len(online), n_spies, self.spy_label, " + Mr. White" if self.white else "")
         self._start_discussion(now)
 
     def _start_discussion(self, now: float):
@@ -508,12 +527,22 @@ class Game:
             self.last_out = leaders[0]
             self.alive.remove(self.last_out)
             self.eliminated.append(self.last_out)
-        left_spies = sum(1 for p in self.alive if p in self.spies)
-        left_civs = len(self.alive) - left_spies
-        if left_spies == 0:
-            return self._finish(CIVILIANS, "Every undercover agent was found!")
-        if left_spies >= left_civs:
-            return self._finish(SPIES, "The undercover agents outlasted the civilians!")
+            if self.last_out == self.white:
+                # Mr. White gets one guess at the civilians' word before the round goes on.
+                self.phase = GUESS
+                self.accused = self.white
+                self._set_timer(now, GUESS_SECONDS)
+                return
+        self._after_elimination(now)
+
+    def _after_elimination(self, now: float):
+        left_bad = sum(1 for p in self.alive if self._impostor(p))
+        left_civs = len(self.alive) - left_bad
+        if left_bad == 0:
+            return self._finish(CIVILIANS, "Every undercover agent was found!" if not self.white
+                                else "Every undercover agent and Mr. White were found!")
+        if left_bad >= left_civs:
+            return self._finish(SPIES, "The undercover side outlasted the civilians!")
         self.phase = REVEAL
         self._set_timer(now, REVEAL_SECONDS)
 
@@ -539,11 +568,13 @@ class Game:
         self.guess_options = options
         self._set_timer(now, GUESS_SECONDS)
 
-    def submit_guess(self, pid: str, word):
+    def submit_guess(self, pid: str, word, now: float = 0.0):
         self._require_player(pid)
         self._require_phase(GUESS)
         if pid != self.accused:
-            raise GameError("Only the spy can guess.")
+            raise GameError("Only the spy can guess." if self.mode == CLASSIC else "Only Mr. White can guess.")
+        if self.mode == UNDERCOVER:
+            return self._white_guess(pid, word, now)
         if word not in self.guess_options:
             raise GameError("Pick one of the words.")
         self.guess = word
@@ -554,6 +585,15 @@ class Game:
         else:
             self._finish(CIVILIANS, f"{name} guessed “{word}”. Wrong!")
 
+    def _white_guess(self, pid: str, word, now: float):
+        text = _clean(word, MAX_CLUE)
+        if not text:
+            raise GameError("Type your guess first.")
+        self.white_guess = text
+        if _norm(text) == _norm(self.word):
+            return self._finish(WHITE, f"{self.name(pid)} was Mr. White and guessed “{self.word}”. Mr. White wins!")
+        self._after_elimination(now)
+
     def _finish(self, winner: str, reason: str):
         self.phase = RESULTS
         self.deadline = self.deadline_len = None
@@ -562,7 +602,12 @@ class Game:
             p = self.players.get(pid)
             if not p:
                 continue
-            spy_side = pid in self.spies
+            if winner == WHITE:
+                if pid == self.white:  # a correct guess wins alone
+                    p.wins += 1
+                    p.score += 3
+                continue
+            spy_side = self._impostor(pid)
             if (winner == SPIES) == spy_side:
                 p.wins += 1
                 p.score += 2 if spy_side else 1
@@ -613,6 +658,8 @@ class Game:
                 self._tally(now)
             elif self.phase == REVEAL:
                 self._start_discussion(now)
+            elif self.phase == GUESS and self.mode == UNDERCOVER:
+                self._after_elimination(now)  # Mr. White ran out of time: just out
             elif self.phase == GUESS:
                 self._finish(CIVILIANS, f"{self.name(self.accused)} ran out of time to guess.")
         return changed
@@ -657,14 +704,17 @@ class Game:
             spy_count=len(self.spies), discussion=self.discussion, clues=self.clues,
             clue_round=self.clue_round, clue_rounds=self.settings["clue_rounds"],
             current_turn=self.current_turn,
-            eliminated=[{"pid": x, "undercover": x in self.spies} for x in self.eliminated],
+            eliminated=[{"pid": x, "undercover": x in self.spies,
+                         "role": "white" if x == self.white else "undercover" if x in self.spies else "civilian"}
+                        for x in self.eliminated],
+            white_in_play=self.white is not None, white_guess=self.white_guess,
             last_out=self.last_out, tie=self.tie,
         )
 
         if p and p.id in self.round_players:
             if self.mode == UNDERCOVER:
-                # Deliberately no "spy" flag: undercover agents must not know.
-                st["role"] = {"word": self.word_for(p.id), "category": self.category}
+                # Deliberately no "spy" flag: undercover agents must not know. Mr. White does know.
+                st["role"] = {"word": self.word_for(p.id), "category": self.category, "mr_white": p.id == self.white}
             elif p.id in self.spies:
                 show_cat = self.settings["spy_sees_category"] or ph == RESULTS
                 st["role"] = {"spy": True, "category": self.category if show_cat else None,
@@ -680,10 +730,12 @@ class Game:
         if ph == GUESS:
             st["accused"] = self.accused
             st["self_reveal"] = self.self_reveal
-            if pid == self.accused:
+            if pid == self.accused and self.mode == CLASSIC:
                 st["guess_options"] = self.guess_options
+            if pid == self.accused and self.mode == UNDERCOVER:
+                st["white_guessing"] = True
         if ph == RESULTS:
             st.update(word=self.word, spy_word=self.spy_word, category=self.category,
                       spies=sorted(self.spies), votes=self.votes, accused=self.accused,
-                      guess=self.guess, winner=self.winner, reason=self.reason)
+                      guess=self.guess, winner=self.winner, reason=self.reason, white=self.white)
         return st
