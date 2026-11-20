@@ -524,3 +524,30 @@ def test_mr_white_needs_four_players_and_is_undercover_only(bank):
     g, ids = new_game(bank, 4, mode=G.CLASSIC, mr_white=True)
     g.start(ids[0], T0)
     assert g.white is None
+
+
+# ---------------------------------------------------------------- history
+
+def test_round_history_is_recorded_and_never_leaks_a_live_word(bank):
+    g, ids = new_game(bank)
+    g.start(ids[0], T0)
+    spy, civs = spy_and_civs(g)
+    g.start_vote(ids[0], T0)
+    vote_all(g, civs[0])
+    first_word = g.word
+    [h] = g.state_for(None, T0)["history"]
+    assert h["round"] == 1 and h["word"] == first_word and h["winner"] == G.SPIES
+    assert h["spies"] == [g.players[spy].name] and h["white"] is None and h["spy_word"] is None
+    # During the next round, history only holds finished rounds.
+    g.start(ids[0], T0 + 100)
+    st = g.state_for(None, T0 + 100)
+    assert len(st["history"]) == 1 and g.word not in json.dumps(st)
+
+
+def test_history_is_capped(bank):
+    g, ids = new_game(bank)
+    for i in range(G.MAX_HISTORY + 5):
+        g.start(ids[0], T0 + i)
+        g.start_vote(ids[0], T0 + i)
+        g.end_vote(ids[0], T0 + i)
+    assert len(g.history) == G.MAX_HISTORY and g.history[-1]["round"] == G.MAX_HISTORY + 5

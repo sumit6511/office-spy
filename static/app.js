@@ -394,6 +394,7 @@ function viewJoin() {
       <button class="btn btn-brass">Take a seat</button>
     </form>
     ${S.phase !== 'lobby' ? '<p class="center dim enter-2">A round is underway. You\'ll be dealt in next round.</p>' : ''}
+    <a class="btn btn-chalk enter-3" href="/screen">Just watch</a>
     <button class="btn btn-quiet enter-3" onclick="openHelp()">How to play</button>
   </div>`;
 }
@@ -514,18 +515,40 @@ function addPack() {
   ui.packSent = $('#packname').value.trim();
 }
 
+// Finished rounds, newest first. Everything here was revealed at the end of its round.
+function caseArchive(skipLatest = false) {
+  const rounds = (S.history || []).slice(0, skipLatest ? -1 : undefined).reverse();
+  if (!rounds.length) return '';
+  const winner = h => h.winner === 'white' ? 'Mr. White won' : h.winner === 'civilians' ? 'Civilians won'
+    : h.mode === 'undercover' ? 'Undercover won' : h.spies.length > 1 ? 'The spies won' : 'The spy won';
+  const odd = h => [
+    h.spies.length ? `${h.mode === 'undercover' ? 'Undercover' : h.spies.length === 1 ? 'Spy' : 'Spies'}: ${h.spies.map(esc).join(', ')}` : '',
+    h.white ? `Mr. White: ${esc(h.white)}` : '',
+  ].filter(Boolean).join('. ');
+  return `<details class="rail" data-key="archive"><summary>Case archive <small>${plural(rounds.length, 'round', 'rounds')}</small></summary>
+    <ul class="roster archive">${rounds.map(h => `<li data-key="h-${h.round}">
+      <span class="medal">${h.round}</span>
+      <span class="nm">${esc(h.spy_word ? `${h.word} / ${h.spy_word}` : h.word)}
+        <small>${esc(h.mode === 'undercover' ? 'Undercover' : 'Classic')}, ${esc(h.category)}. ${odd(h)}.</small></span>
+      <span class="badge">${winner(h)}</span></li>`).join('')}</ul></details>`;
+}
+
 function viewLobby() {
   return `<div data-key="v-lobby">${setup()}
     <section class="rail" data-key="players"><h3>At the table <small>${plural(S.players.length, 'player', 'players')}</small></h3>${roster({kick: true})}</section>
-    ${invite()}${hostTools()}
+    ${invite()}${caseArchive()}${hostTools()}
     <button class="btn btn-quiet" onclick="if(confirm('Leave the table?'))send('leave')">Leave the table</button></div>`;
 }
 
 function watching(title, note, viewKey) {
   const typed = S.clue_mode === 'typed' && S.phase === 'playing';
+  const order = S.phase === 'playing' && S.clue_mode === 'talk' && S.order && S.order.length
+    ? `<section class="rail" data-key="order"><h3>Speaking order</h3>
+        <ul class="roster">${S.order.map((id, i) => `<li data-key="o-${id}">${chip(id, 'sm')}<span class="nm">${nameOf(id)}</span><span class="badge">${i + 1}</span></li>`).join('')}</ul></section>`
+    : '';
   return `<div class="headline enter" data-key="watch"><h2>${title}</h2><p>${note}</p></div>
     ${typed && S.current_turn ? `<div class="paper waiting enter-2" data-key="wait-${S.current_turn}">${chip(S.current_turn)}<span class="typed" style="color:var(--ink)"><b>${nameOf(S.current_turn)}</b> is writing<span class="dots"><i></i><i></i><i></i></span></span></div>` : ''}
-    ${clock()}${clueLog(viewKey)}`;
+    ${clock()}${S.phase === 'playing' ? spyCount() : ''}${order}${clueLog(viewKey)}`;
 }
 
 function viewPlaying(vk) {
@@ -667,7 +690,7 @@ function viewResults(vk) {
   return `<section class="paper verdict drop" data-key="verdict-final">
       <span class="stamp ${spiesWon || whiteWon ? 'red' : 'blue'} slam">${stampText}</span><p>${esc(S.reason)}</p></section>
     <section class="paper declass enter-2" data-key="declass">${words}<p class="meta">${esc(S.category)}</p><div class="agents">${agents}</div></section>
-    ${controls}${out}${uc ? '' : votesCard(S.votes)}${board}${clueLog(vk, 'Clues given')}`;
+    ${controls}${out}${uc ? '' : votesCard(S.votes)}${board}${clueLog(vk, 'Clues given')}${caseArchive(true)}`;
 }
 
 // Shared TV / projector: never shows a word or role until the results.

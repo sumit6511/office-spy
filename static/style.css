@@ -402,3 +402,5 @@ body.screen .rail > h3, body.screen .log h3 { font-size: 30px; }
 body.screen .roster .nm small { font-size: 18px; }
 body.screen .roster .pts { font-size: 30px; }
 body.screen .top .op b { font-size: 28px; }
+
+a.btn { text-decoration: none; box-sizing: border-box; }

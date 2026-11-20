@@ -47,6 +47,12 @@ if they guess the word, the spies win; if not, the civilians win, even if the ot
 - **⌨️ Type on phones:** players take turns typing a short clue (45 s each, 1–3 laps). Everyone sees the clue board.
   Clues containing your own word are rejected. Offline or slow players are skipped automatically.
 
+**Case archive:** the lobby and results screens list past rounds (word, who the spies or Mr. White were, who won).
+It's kept until the server stops.
+
+**Watching:** anyone who opens the join link can tap **Just watch** for the shared-screen view without taking a seat.
+People who join mid-round, or are voted out, can follow the clues and votes until the next deal.
+
 **Points:** winning civilians get +1 each. Winning spies or undercover agents get +2 each. The scoreboard also tracks wins/games.
 It's saved to `data/scores.json` by player name, so it survives restarting the server. The host can reset it.
 

@@ -40,6 +40,7 @@ REVEAL_SECONDS = 10
 HOST_HANDOVER_SECONDS = 15
 OFFLINE_TURN_GRACE = 6
 MAX_REJOIN_REQUESTS = 10
+MAX_HISTORY = 30
 
 LOBBY, PLAYING, VOTING, REVEAL, GUESS, RESULTS = "lobby", "playing", "voting", "reveal", "guess", "results"
 CLASSIC, UNDERCOVER = "classic", "undercover"
@@ -104,6 +105,8 @@ class Game:
         # New device -> the offline seat it asked for. Mid-round a seat holds a secret word, so the host
         # has to approve the hand-over; once the round is over the request goes through on its own.
         self.rejoin_requests: dict[str, str] = {}
+        # Finished rounds, oldest first. Everything here was already revealed at the end of its round.
+        self.history: list[dict] = []
         self._reset_round()
 
     def _reset_round(self):
@@ -612,6 +615,13 @@ class Game:
                 p.wins += 1
                 p.score += 2 if spy_side else 1
         self._save_scores()
+        self.history.append({
+            "round": self.round, "codename": self.codename, "mode": self.mode, "category": self.category,
+            "word": self.word, "spy_word": self.spy_word if self.mode == UNDERCOVER else None,
+            "spies": sorted(self.name(p) for p in self.spies), "white": self.name(self.white) if self.white else None,
+            "winner": winner, "reason": reason, "players": len(self.round_players),
+        })
+        del self.history[:-MAX_HISTORY]
         log.info("Round %d over: %s win. %s", self.round, winner, reason)
 
     def back_to_lobby(self, pid: str, force: bool = False):
@@ -679,6 +689,7 @@ class Game:
             "settings": dict(self.settings),
             "categories": self.bank.categories(),
             "min_players": MIN_PLAYERS,
+            "history": self.history,
             "you": p and {
                 "id": p.id, "name": p.name, "is_host": p.id == self.host_id,
                 "in_round": p.id in self.round_players, "alive": p.id in self.alive,
